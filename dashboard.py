@@ -4,6 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import io
+import html as html_lib
 import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -306,46 +307,57 @@ try:
             return "데이터 없음"
 
         metric_col = "거래대금(억)" if t_type == "val" else "거래량(만)"
-        html = f"""
-        <table style="width:100%; border-collapse:collapse; font-size:14px;">
-            <thead>
-                <tr style="background-color:#f8fafc;">
-                    <th style="padding:8px; border-bottom:1px solid #e5e7eb;">순위</th>
-                    <th style="padding:8px; border-bottom:1px solid #e5e7eb;">종목명</th>
-                    <th style="padding:8px; border-bottom:1px solid #e5e7eb;">등락률</th>
-                    <th style="padding:8px; border-bottom:1px solid #e5e7eb;">{metric_col}</th>
-                    <th style="padding:8px; border-bottom:1px solid #e5e7eb;">추천</th>
-                </tr>
-            </thead>
-            <tbody>
-        """
+        parts = [
+            "<div style='overflow-x:auto;'>",
+            "<table style='width:100%; border-collapse:collapse; font-size:14px;'>",
+            "<thead>",
+            "<tr style='background-color:#f8fafc;'>",
+            "<th style='padding:8px; border-bottom:1px solid #e5e7eb; text-align:center;'>순위</th>",
+            "<th style='padding:8px; border-bottom:1px solid #e5e7eb; text-align:left;'>종목명</th>",
+            "<th style='padding:8px; border-bottom:1px solid #e5e7eb; text-align:right;'>등락률</th>",
+            f"<th style='padding:8px; border-bottom:1px solid #e5e7eb; text-align:right;'>{metric_col}</th>",
+            "<th style='padding:8px; border-bottom:1px solid #e5e7eb; text-align:center;'>추천</th>",
+            "</tr>",
+            "</thead>",
+            "<tbody>",
+        ]
 
-        for idx, row in df.iterrows():
-            nm = row.get('종목명', '-')
+        for idx, row in df.reset_index(drop=True).iterrows():
+            nm = str(row.get('종목명', '-'))
             r_num = parse_rate(row.get('등락률', '0'))
             r_h = f"+{r_num}%" if r_num > 0 else f"{r_num}%"
             is_rec = is_recommended_stock(row, t_type)
+            is_super = nm in super_stocks
+            is_highlight = is_rec or is_super
 
-            if is_rec:
+            if is_super:
+                recommendations[nm] = "🎯 양타점"
+            elif is_rec:
                 recommendations[nm] = "💎 수급 집중" if t_type == "val" else "🚀 추세 전환"
 
             val_txt = row.get(metric_col, 0)
-            row_bg = "#fee2e2" if is_rec else "white"       # 추천 종목: 빨간색 음영
-            row_bd = "2px solid #ef4444" if is_rec else "1px solid #e5e7eb"
-            badge = "<span style='color:#b91c1c; font-weight:700;'>추천</span>" if is_rec else ""
+            row_bg = "#fee2e2" if is_highlight else "#ffffff"      # 추천 종목: 빨간색 음영
+            row_bd = "2px solid #ef4444" if is_highlight else "1px solid #e5e7eb"
+            badge_text = "강력추천" if is_super else ("추천" if is_rec else "")
+            badge = (
+                "<span style='background-color:#fecaca; color:#991b1b; "
+                "font-weight:700; padding:2px 6px; border-radius:4px;'>"
+                f"{badge_text}</span>"
+                if badge_text else ""
+            )
 
-            html += f"""
-                <tr style="background-color:{row_bg};">
-                    <td style="padding:8px; border-bottom:{row_bd}; text-align:center;">{idx+1}</td>
-                    <td style="padding:8px; border-bottom:{row_bd}; font-weight:700;">{nm}</td>
-                    <td style="padding:8px; border-bottom:{row_bd}; text-align:right;">{r_h}</td>
-                    <td style="padding:8px; border-bottom:{row_bd}; text-align:right;">{val_txt}</td>
-                    <td style="padding:8px; border-bottom:{row_bd}; text-align:center;">{badge}</td>
-                </tr>
-            """
+            parts.extend([
+                f"<tr style='background-color:{row_bg};'>",
+                f"<td style='padding:8px; border-bottom:{row_bd}; text-align:center;'>{idx + 1}</td>",
+                f"<td style='padding:8px; border-bottom:{row_bd}; font-weight:700;'>{html_lib.escape(nm)}</td>",
+                f"<td style='padding:8px; border-bottom:{row_bd}; text-align:right;'>{html_lib.escape(r_h)}</td>",
+                f"<td style='padding:8px; border-bottom:{row_bd}; text-align:right;'>{html_lib.escape(str(val_txt))}</td>",
+                f"<td style='padding:8px; border-bottom:{row_bd}; text-align:center;'>{badge}</td>",
+                "</tr>",
+            ])
 
-        html += "</tbody></table>"
-        return html
+        parts.extend(["</tbody>", "</table>", "</div>"])
+        return "".join(parts)
 
     col1, col2, col3 = st.columns([1, 1, 1.6])
     with col1: st.subheader("💵 수급 집중"); st.markdown(build_table(df_v, "val"), unsafe_allow_html=True)
